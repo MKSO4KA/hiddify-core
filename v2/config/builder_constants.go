@@ -20,6 +20,10 @@ const (
 	OutboundDNSTag            = "dns-out §hide§"
 	OutboundDirectFragmentTag = "direct-fragment §hide§"
 
+	OutboundOverseasAutoTag = "Overseas-Auto"
+	OutboundRuRbAutoTag     = "RU/RB-Auto"
+	OutboundRuRbBridgeTag   = "RU/RB-BRIDGE"
+
 	WARPConfigTag = "🔒 WARP"
 
 	InboundTUNTag    = "tun-in"
@@ -32,6 +36,10 @@ const (
 var (
 	OutboundMainDetour       = OutboundSelectTag
 	OutboundWARPConfigDetour = OutboundDirectFragmentTag
-	PredefinedOutboundTags   = []string{OutboundDirectTag, OutboundBypassTag, OutboundSelectTag, OutboundURLTestTag, OutboundDNSTag, OutboundDirectFragmentTag, WARPConfigTag}
+	PredefinedOutboundTags   = []string{
+		OutboundDirectTag, OutboundBypassTag, OutboundSelectTag, 
+		OutboundURLTestTag, OutboundDNSTag, OutboundDirectFragmentTag, 
+		WARPConfigTag, OutboundOverseasAutoTag, OutboundRuRbAutoTag, OutboundRuRbBridgeTag,
+	}
 )
 

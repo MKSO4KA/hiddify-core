@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,21 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/json/badoption"
 )
+
+var (
+	whitelistRegex      = regexp.MustCompile(`(?i)(\bбел[а-я\.]*|white\s?list|список|списки|локальн[а-я]*|local)`)
+	overseasBridgeRegex = regexp.MustCompile(`(?i)(заруб|overseas|foreign|bridge)`)
+)
+
+func classifyNode(name string) string {
+	if whitelistRegex.MatchString(name) {
+		if overseasBridgeRegex.MatchString(name) {
+			return OutboundRuRbBridgeTag
+		}
+		return OutboundRuRbAutoTag
+	}
+	return OutboundOverseasAutoTag
+}
 
 func setNTP(options *option.Options) {
 	options.NTP = &option.NTPOptions{

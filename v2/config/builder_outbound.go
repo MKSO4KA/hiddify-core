@@ -13,6 +13,9 @@ func setOutbounds(options *option.Options, input *option.Options, opt *HiddifyOp
 	var outbounds []option.Outbound
 	var endpoints []option.Endpoint
 	var tags []string
+	var overseasTags []string
+	var ruRbTags []string
+	var bridgeTags []string
 
 	OutboundMainDetour = OutboundSelectTag
 	OutboundWARPConfigDetour = OutboundDirectFragmentTag
@@ -48,6 +51,15 @@ func setOutbounds(options *option.Options, input *option.Options, opt *HiddifyOp
 			}
 			if !strings.Contains(out.Tag, "§hide§") {
 				tags = append(tags, out.Tag)
+				class := classifyNode(out.Tag)
+				switch class {
+				case OutboundOverseasAutoTag:
+					overseasTags = append(overseasTags, out.Tag)
+				case OutboundRuRbAutoTag:
+					ruRbTags = append(ruRbTags, out.Tag)
+				case OutboundRuRbBridgeTag:
+					bridgeTags = append(bridgeTags, out.Tag)
+				}
 			}
 			out = *patchHiddifyWarpFromConfig(&out, *opt)
 			outbounds = append(outbounds, out)
@@ -111,6 +123,15 @@ func setOutbounds(options *option.Options, input *option.Options, opt *HiddifyOp
 
 		if !strings.Contains(out.Tag, "§hide§") {
 			tags = append(tags, out.Tag)
+			class := classifyNode(out.Tag)
+			switch class {
+			case OutboundOverseasAutoTag:
+				overseasTags = append(overseasTags, out.Tag)
+			case OutboundRuRbAutoTag:
+				ruRbTags = append(ruRbTags, out.Tag)
+			case OutboundRuRbBridgeTag:
+				bridgeTags = append(bridgeTags, out.Tag)
+			}
 		}
 
 		endpoints = append(endpoints, *out)
@@ -121,6 +142,61 @@ func setOutbounds(options *option.Options, input *option.Options, opt *HiddifyOp
 			opt.ConnectionTestUrls = []string{opt.ConnectionTestUrl}
 		}
 	}
+
+	if len(tags) == 0 {
+		tags = append(tags, OutboundDirectTag)
+	}
+
+	var activeBalancers []string
+
+	if len(overseasTags) > 0 {
+		overseasBalancer := option.Outbound{
+			Type: C.TypeBalancer,
+			Tag:  OutboundOverseasAutoTag,
+			Options: &option.BalancerOutboundOptions{
+				Outbounds:                 overseasTags,
+				Strategy:                  "lowest-delay",
+				DelayAcceptableRatio:      2,
+				Tolerance:                 1,
+				InterruptExistConnections: true,
+			},
+		}
+		outbounds = append([]option.Outbound{overseasBalancer}, outbounds...)
+		activeBalancers = append(activeBalancers, OutboundOverseasAutoTag)
+	}
+
+	if len(ruRbTags) > 0 {
+		ruRbBalancer := option.Outbound{
+			Type: C.TypeBalancer,
+			Tag:  OutboundRuRbAutoTag,
+			Options: &option.BalancerOutboundOptions{
+				Outbounds:                 ruRbTags,
+				Strategy:                  "lowest-delay",
+				DelayAcceptableRatio:      2,
+				Tolerance:                 1,
+				InterruptExistConnections: true,
+			},
+		}
+		outbounds = append([]option.Outbound{ruRbBalancer}, outbounds...)
+		activeBalancers = append(activeBalancers, OutboundRuRbAutoTag)
+	}
+
+	if len(bridgeTags) > 0 {
+		bridgeBalancer := option.Outbound{
+			Type: C.TypeBalancer,
+			Tag:  OutboundRuRbBridgeTag,
+			Options: &option.BalancerOutboundOptions{
+				Outbounds:                 bridgeTags,
+				Strategy:                  "lowest-delay",
+				DelayAcceptableRatio:      2,
+				Tolerance:                 1,
+				InterruptExistConnections: true,
+			},
+		}
+		outbounds = append([]option.Outbound{bridgeBalancer}, outbounds...)
+		activeBalancers = append(activeBalancers, OutboundRuRbBridgeTag)
+	}
+
 	urlTest := option.Outbound{
 		Type: C.TypeBalancer,
 		Tag:  OutboundURLTestTag,
@@ -144,26 +220,37 @@ func setOutbounds(options *option.Options, input *option.Options, opt *HiddifyOp
 			InterruptExistConnections: true,
 		},
 	}
-	
+
 	defaultSelect := tags[0]
+	manualDefault := ""
 	for _, tag := range tags {
 		if strings.Contains(tag, "§default§") {
-			defaultSelect = tag // CORRECTED: Uses the actual valid tag string instead of just "§default§"
+			manualDefault = tag
+			break
 		}
 	}
 
-	selectorTags := tags
+	selectorTags := append([]string{}, activeBalancers...)
 	if len(tags) > 1 {
 		if OutboundMainDetour == WARPConfigTag {
 			outbounds = append([]option.Outbound{urlTest}, outbounds...)
-			selectorTags = append([]string{urlTest.Tag}, selectorTags...)
+			selectorTags = append(selectorTags, urlTest.Tag)
 			defaultSelect = urlTest.Tag
 		} else {
 			outbounds = append([]option.Outbound{balancer, urlTest}, outbounds...)
-			selectorTags = append([]string{urlTest.Tag, balancer.Tag}, selectorTags...)
-			defaultSelect = balancer.Tag
+			selectorTags = append(selectorTags, balancer.Tag, urlTest.Tag)
+			defaultSelect = balancer.Tag // Default to Round-Robin to avoid DNS bootstrap deadlock
 		}
+	} else if len(activeBalancers) > 0 {
+		defaultSelect = activeBalancers[0]
 	}
+
+	if manualDefault != "" {
+		defaultSelect = manualDefault
+	}
+
+	selectorTags = append(selectorTags, tags...)
+
 	selector := option.Outbound{
 		Type: C.TypeSelector,
 		Tag:  OutboundSelectTag,
